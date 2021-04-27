@@ -1,45 +1,46 @@
 # Connect 4 u1806475
 import numpy as np
-from random import randint
+from copy import copy, deepcopy
+from config import CONFIG
+from mcts import ConnectFourState, MinimaxPlayer, RandomPlayer
 
-moves_played = 0
-turn = ["A", "B", "C", "B"]
-teams = {"A": "RED", "B": "BLUE", "C": "RED"}
-modes = {"A": "random", "B": "random", "C": "random"}
-# TODO: Create MCTS object class
-# if modes["A"] == "mcts":
-    # initialise mcts object
-    
-board_size = (6,7)
-board = np.empty(board_size, dtype=str)
-game_result = None
+board = np.empty(CONFIG.boardSize, dtype=str)
+movesPlayed = 0
+gameResult = None
+currentState = ConnectFourState(board=board,
+                                player=CONFIG.turn[0],
+                                movesPlayed=movesPlayed)
 
+# Create Player Objects
+players = {}
+for player, mode in CONFIG.modes.items():
+    if mode == "random":
+        players[player] = RandomPlayer(deepcopy(currentState))
+    if "minimax" in mode:
+        sightLimit = int(mode.replace("minimax", ""))
+        players[player] = MinimaxPlayer(player, deepcopy(currentState), sightLimit)
+    # if mode == "mcts":
+    #     players[player] = MCTSPlayer()
+# print(players)
 
-def place_token(column, team):
-    global board
-    height = board.shape[0]
+def placeToken(column, team, board):
+    height = CONFIG.boardSize[0]
     for row in range(height-1, -1, -1):
         if board[row][column] == "":
             board[row][column] = team
             return True
+            break
     return False
 
-def play(player):
-    global board
-    global modes
-    global teams
-    if modes[player] == "random":
-        while not place_token(randint(0, board.shape[0]-1), teams[player]):
-            continue
-    # TODO: implement limited sight minimax player
-    # if "minimax" in modes[player]:
-        # sight_level = modes[player].replace("minimax", "")[-1]
-    # TODO: implement different mcts player types
-    # if "mcts" in modes[player]:
-    #     mcts_type = modes[player]
+def play(player, board):
+    action = players[player].determineNextAction()
+    # print(CONFIG.teams[player])
+    placeToken(action, CONFIG.teams[player], board)
+    for playerObject in players.values():
+        playerObject.logAction(action, player)
 
-def check_for_win():
-    global board
+def checkForWin():
+    # global board
     height = board.shape[0]
     length = board.shape[1]
     for row in range(height-1, -1, -1):
@@ -78,18 +79,23 @@ def check_for_win():
     return None
 
 
-while game_result == None:
-    current_player = turn[moves_played%len(turn)]
-    play(current_player)
-    game_result = check_for_win()
-    if game_result:
+while gameResult == None:
+    # next player plays
+    currentPlayer = CONFIG.turn[movesPlayed%len(CONFIG.turn)]
+    play(currentPlayer, board)
+    print(currentPlayer)
+    print(board)
+    movesPlayed += 1
+    # check for a win
+    gameResult = checkForWin()
+    if gameResult:
         break
-    moves_played += 1
-    if moves_played >= board_size[0]*board_size[1]:
-        game_result = "DRAW"
+    # check whether board is full
+    if movesPlayed >= CONFIG.boardSize[0]*CONFIG.boardSize[1]:
+        gameResult = "DRAW"
 
 print(board)
-if game_result == "DRAW":
-    print(f"Game ended in a DRAW after {moves_played} moves")
+if gameResult == "DRAW":
+    print(f"Game ended in a DRAW after {movesPlayed} moves")
 else:
-    print(f"Winner is: {game_result} after {moves_played} moves")
+    print(f"Winner is: {gameResult} after {movesPlayed} moves")
