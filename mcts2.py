@@ -5,15 +5,11 @@ import time
 import math
 import random
 
-# random simulation policy for MCTS, converging to Minimax
+# random simulation policy for MCTS
 def randomPolicy(node, player):
-    # node passed as parameter must not be fully simulated
     while not node.isTerminal:
         node.expand()
-        nonSimulatedChildren = [child for child in node.children.values() if not child.isFullySimulated]
-        # print(node.state.board)
-        # print(node.state.getPossibleActions())
-        node = random.choice(nonSimulatedChildren)
+        node = random.choice(list(node.children.values()))
     # print("\nSimulation Reward:", node.calculateReward(player))
     # print("Simulation Node Depth:", node.depth)
     return node, node.calculateReward(player)[0]
@@ -51,7 +47,6 @@ class MCTSNode():
         self.state = state
         self.isTerminal = state.isTerminal()
         self.isFullyExpanded = False
-        self.isFullySimulated = False
         self.parent = parent
         self.children = {}
         self.wins = 0
@@ -64,22 +59,6 @@ class MCTSNode():
         if self.numVisits == 0:
             return float("inf")
         return self.totalReward/self.numVisits
-
-    def getSimulatedRatio(self):
-        # returns (number of descendants + self) which are simulated, total (number of descendants + self)
-        numSimulated = 0
-        numTotal = 1
-        if self.isFullySimulated:
-            numSimulated += 1
-
-        if self.isTerminal:
-            return numSimulated, numTotal
-        else:
-            for child in self.children.values():
-                simRatio = child.getSimulatedRatio()
-                numSimulated += simRatio[0]
-                numTotal += simRatio[1]
-            return numSimulated, numTotal
 
     def calculateReward(self, player):
         return self.state.calculateReward(player)
@@ -281,7 +260,7 @@ class MinimaxPlayer():
 
 
 class MCTSPlayer():
-    def __init__(self, player, state, timeLimit=None, iterationLimit=None, explorationConstant=1000,
+    def __init__(self, player, state, timeLimit=None, iterationLimit=None, explorationConstant=500,
                  rolloutPolicy=randomPolicy):
         self.player = player
         self.state = state
@@ -308,33 +287,24 @@ class MCTSPlayer():
             print(f"\n[Player {self.player}] Beginning Monte-Carlo Tree Search")
             self.root.expand()
             print("BEFORE Search")
-            # print(f"ROOT: AvgReward={self.root.getAvgReward(self.player):<13.3f}")
-            numSimulated, numTotal = self.root.getSimulatedRatio()
-            print(f"ROOT: AvgReward={self.root.getAvgReward(self.player):<13.3f}TotalReward={self.root.totalReward:<9}NumVisits={self.root.numVisits:<7}SimRatio={numSimulated:6}:{numTotal}")
+            print(f"ROOT: AvgReward={self.root.getAvgReward(self.player):<13.3f}TotalReward={self.root.totalReward:<9}NumVisits={self.root.numVisits:<13}")
             print(f"Possible Actions: {self.state.getPossibleActions()}")
             for action, child in self.root.children.items():
-                print(f"Column {action}: AvgReward={child.getAvgReward(self.player):<13.3f}TotalReward={child.totalReward:<9}NumVisits={child.numVisits:<7}FullySimulated={child.isFullySimulated}")
+                print(f"Column {action}: AvgReward={child.getAvgReward(self.player):<13.3f}TotalReward={child.totalReward:<9}NumVisits={child.numVisits:<13}")
         # search until time limit
         if self.limitType == 'time':
             timeLimit = time.time() + self.timeLimit / 1000
-            while time.time() < timeLimit and not self.root.isFullySimulated:
+            while time.time() < timeLimit:
                 self.executeRound()
         # search until iteration limit
         else:
             for i in range(self.searchLimit):
-                if self.root.isFullySimulated:
-                    break
-                else:
-                    self.executeRound()
-
+                self.executeRound()
 
         if description:
-            if self.root.isFullySimulated:
-                print("\nMCTS COMPLETE: Root Fully Simulated")
-            else:
-                print("\nMCTS COMPLETE: Limit Reached")
+            print("\nAFTER Search")
             for action, child in self.root.children.items():
-                print(f"Column {action}: AvgReward={child.getAvgReward(self.player):<13.3f}TotalReward={child.totalReward:<9}NumVisits={child.numVisits:<7}FullySimulated={child.isFullySimulated}")
+                print(f"Column {action}: AvgReward={child.getAvgReward(self.player):<13.3f}TotalReward={child.totalReward:<9}NumVisits={child.numVisits:<13}")
         bestChild = self.getBestChild(self.root, 0)
         action=(action for action, node in self.root.children.items() if node is bestChild).__next__()
         return action
@@ -357,7 +327,6 @@ class MCTSPlayer():
         return node
 
     def backpropogate(self, node, reward):
-        node.isFullySimulated = True # set terminal (leaf) node to Simulated
         while node is not None:
             node.numVisits += 1
             node.totalReward += reward
@@ -365,19 +334,11 @@ class MCTSPlayer():
                 break # end backpropagation
             else: # if current node is root
                 node = node.parent
-                # if all children have been fully simulated, set parent.isFullySimulated
-                # print("All Children Fully Simulated:", all([child.isFullySimulated for child in node.children.values()]))
-                if all([child.isFullySimulated for child in node.children.values()]):
-                    # aim is to represent whether leaf nodes have been simulated
-                    node.isFullySimulated = True
 
     def getBestChild(self, node, explorationConstant):
         bestValue = float("-inf")
         bestNodes = []
-        children = node.children.values()
-        if explorationConstant != 0: # if still searching tree, not yet choosing next action
-            children = [child for child in children if not child.isFullySimulated]
-        for child in children:
+        for child in node.children.values():
             nodeValue = UCB1(child, self.player, explorationConstant)
             if nodeValue > bestValue:
                 bestValue = nodeValue
@@ -400,74 +361,9 @@ class MCTSPlayer():
         else:
             if player != self.player:
                 # TODO: update estimated sight level of other players
+                # use CONFIG.turn not CONFIG.teams, to include players actually playing not just in the "room"
                 pass
             # update root node
             self.root.expand()
             self.root = self.root.children[action]
             return self.root.state
-
-
-
-
-# def isTerminal(self):
-    # height = CONFIG.boardSize[0]
-    # length = CONFIG.boardSize[1]
-    # for row in range(height-1, -1, -1):
-    #     for column in range(length):
-    #         initial = self.board[row][column]
-    #         if initial == "":
-    #             continue
-    #         # check up
-    #         if row >= 3:
-    #             for i in range(1,4):
-    #                 if (self.board[row-i][column] != initial):
-    #                     break
-    #                 if i == 3:
-    #                     return True
-    #             # check up and left diagonal
-    #             if column >= 3:
-    #                 for i in range(1,4):
-    #                     if self.board[row-i][column-i] != initial:
-    #                         break
-    #                     if i == 3:
-    #                         return True
-    #             # check up and right diagonal
-    #             if column <= length-4:
-    #                 for i in range(1,4):
-    #                     if self.board[row-i][column+i] != initial:
-    #                         break
-    #                     if i == 3:
-    #                         return True
-    #         # check right
-    #         if column <= length-4:
-    #             for i in range(1,4):
-    #                 if self.board[row][column+i] != initial:
-    #                     break
-    #                 if i == 3:
-    #                     return True
-    # return False
-
-
-    # def expand(self, node):
-    #     actions = node.state.getPossibleActions()
-    #     for action in actions:
-    #         newNode = TreeNode(node.state.takeAction(action), node)
-    #         node.children.append(newNode)
-    #     node.isFullyExpanded = True
-
-# # random policy for a state
-# def randomPolicy(state):
-#     while not state.isTerminal():
-#         try:
-#             action = random.choice(state.getPossibleActions())
-#         except IndexError:
-#             raise Exception("Non-terminal state has no possible actions: " + str(state))
-#         state = state.takeAction(action)
-#     return state.calculateReward()
-
-# # random policy for a node
-# def randomPolicy(node):
-#     while not node.isTerminal():
-#         node.expand()
-#         node = random.choice(node.children.values())
-#     return node.calculateReward()
